@@ -278,8 +278,8 @@ const fmtAlt = n => Math.round(n).toLocaleString('en-US');
 const fmtHard = n => n.toFixed(1);
 
 // ---- 상태 ----
-const state = { alt: 5036, style: 'gauge', pos: 'above', first: false, bg: 'scene', face: 'gowun', nudge: 0, fx: true, dfx: true, dborder: false, pillA: 98, hold: 3, fps: 30, mode: 'alt', locName: '마추픽추', locOrig: 'Machu Picchu', locRegion: '쿠스코, 페루', locPin: true, locScrim: true };
-try { Object.assign(state, JSON.parse(localStorage.getItem('alt-tool') || '{}')); } catch (e) {}
+const state = { alt: 5036, style: 'gauge', pos: 'above', first: false, bg: 'sand', face: 'gowun', nudge: 0, fx: true, dfx: true, dborder: false, pillA: 98, hold: 3, fps: 30, mode: 'alt', locName: '마추픽추', locOrig: 'Machu Picchu', locRegion: '쿠스코, 페루', locPin: true, locScrim: true };
+try { const saved = JSON.parse(localStorage.getItem('alt-tool') || '{}'); delete saved.bg; Object.assign(state, saved); } catch (e) {} // 미리보기 배경은 항상 밝은 배경으로 시작
 Object.assign(state, { mode: 'alt', style: 'gauge', face: 'gowun', pillA: 98 }); // 고정 (캡슐 배경은 98%로 시작, 슬라이더로 바꿀 수 있음)
 function persist() { try { localStorage.setItem('alt-tool', JSON.stringify(state)); } catch (e) {} }
 
