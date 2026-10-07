@@ -75,7 +75,14 @@
   .summit-row b { color: var(--ice); font-weight: 700; }
   .summit-bar { position: relative; height: 8px; border-radius: 999px; background: linear-gradient(90deg, #2E9E5B 0%, #7CC4E8 45%, #2F6FD6 75%, #1B2E7A 100%); opacity: 0.9; }
   .summit-bar::after { content: ''; position: absolute; right: -1px; top: -5px; border: 6px solid transparent; border-bottom: 8px solid var(--flag-w); border-top: 0; }
-  .summit-pin { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--ground); transform: translate(-50%, -50%); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .summit-bar { cursor: pointer; touch-action: none; }
+  .summit-bar::before { content: ''; position: absolute; left: -8px; right: -8px; top: -12px; bottom: -12px; } /* 잡기 쉬운 영역 */
+  .summit-bar.dragging, .summit-bar.dragging .summit-pin { cursor: grabbing; }
+  .summit-range { display: flex; justify-content: space-between; gap: 10px; margin-top: 12px; font-size: 0.72rem; color: var(--muted); }
+  .summit-range label { display: flex; align-items: center; gap: 6px; }
+  .summit-range input { width: 78px; padding: 5px 7px; border-radius: 8px; border: 1px solid var(--line); background: var(--well); color: var(--ink); font: inherit; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+  .summit-range input:focus { outline: none; border-color: var(--ice); }
+  .summit-pin { cursor: grab; pointer-events: none; position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); border: 2px solid var(--ground); transform: translate(-50%, -50%); box-shadow: 0 0 0 3px var(--accent-soft); }
   .values { margin: 12px 0 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
   .values > div { background: var(--raise); border-radius: 8px; padding: 8px 10px; min-width: 0; }
   .values dt { font-size: 0.72rem; color: var(--ice); opacity: 0.8; }
@@ -164,9 +171,13 @@
       <section class="card">
         <label class="field" for="alt">고도</label>
         <div class="alt-input"><input id="alt" type="number" inputmode="numeric" value="5036" min="-500" max="9000" step="1"><span>m</span></div>
-        <div class="summit" aria-hidden="true">
-          <div class="summit-row"><span>해발 0m</span><span>에베레스트까지 <b id="summit-pct">—</b></span><span>8,849m</span></div>
-          <div class="summit-bar"><span class="summit-pin" id="summit-pin"></span></div>
+        <div class="summit">
+          <div class="summit-row"><span id="summit-lo">해발 0m</span><span>에베레스트까지 <b id="summit-pct">—</b></span><span id="summit-hi">8,849m</span></div>
+          <div class="summit-bar" id="summit-bar" role="slider" tabindex="0" aria-label="고도 (끌어서 조절)"><span class="summit-pin" id="summit-pin"></span></div>
+          <div class="summit-range">
+            <label>최소 <input id="summit-min" type="number" inputmode="numeric" step="100" value="0">m</label>
+            <label>최대 <input id="summit-max" type="number" inputmode="numeric" step="100" value="8849">m</label>
+          </div>
         </div>
         <dl class="values">
           <div><dt>산소량</dt><dd id="v-o2">—</dd></div>
@@ -726,7 +737,46 @@ render();
 <script>
 (() => {
   const el = document.getElementById('alt'), pin = document.getElementById('summit-pin'), pct = document.getElementById('summit-pct');
-  const upd = () => { const a = Math.max(0, Math.min(8849, +el.value || 0)); pin.style.left = (a / 8849 * 100) + '%'; pct.textContent = Math.round(a / 8849 * 100) + '%'; };
+  const bar = document.getElementById('summit-bar'), minIn = document.getElementById('summit-min'), maxIn = document.getElementById('summit-max');
+  const loL = document.getElementById('summit-lo'), hiL = document.getElementById('summit-hi');
+  // 바 범위(최소~최대)는 따로 기억
+  let range = { min: 0, max: 8849 };
+  try { Object.assign(range, JSON.parse(localStorage.getItem('alt-range') || '{}')); } catch (e) {}
+  const fmt = n => n.toLocaleString('en-US') + 'm';
+  const span = () => Math.max(1, range.max - range.min);
+  const upd = () => {
+    const a = +el.value || 0;
+    const f = Math.max(0, Math.min(1, (a - range.min) / span()));
+    pin.style.left = (f * 100) + '%';
+    pct.textContent = Math.round(Math.max(0, a) / 8849 * 100) + '%';
+    loL.textContent = (range.min === 0 ? '해발 ' : '') + fmt(range.min); hiL.textContent = fmt(range.max);
+    bar.setAttribute('aria-valuemin', range.min); bar.setAttribute('aria-valuemax', range.max); bar.setAttribute('aria-valuenow', a);
+  };
+  const setAlt = a => {
+    a = Math.round(Math.max(range.min, Math.min(range.max, a)) / 10) * 10; // 10m 단위
+    if (+el.value === a) return;
+    el.value = a; el.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const fromX = x => { const r = bar.getBoundingClientRect(); setAlt(range.min + Math.max(0, Math.min(1, (x - r.left) / r.width)) * span()); };
+  bar.addEventListener('pointerdown', e => { bar.setPointerCapture(e.pointerId); bar.classList.add('dragging'); fromX(e.clientX); e.preventDefault(); });
+  bar.addEventListener('pointermove', e => { if (bar.hasPointerCapture(e.pointerId)) fromX(e.clientX); });
+  const end = e => { bar.classList.remove('dragging'); };
+  bar.addEventListener('pointerup', end); bar.addEventListener('pointercancel', end);
+  bar.addEventListener('keydown', e => {
+    const d = { ArrowRight: 100, ArrowUp: 100, ArrowLeft: -100, ArrowDown: -100 }[e.key];
+    if (d) { setAlt((+el.value || 0) + (e.shiftKey ? d * 10 : d)); e.preventDefault(); }
+  });
+  const applyRange = () => {
+    let lo = Math.round(+minIn.value), hi = Math.round(+maxIn.value);
+    if (!isFinite(lo)) lo = range.min; if (!isFinite(hi)) hi = range.max;
+    if (hi <= lo) return; // 최대가 최소보다 커야 적용
+    range = { min: lo, max: hi };
+    try { localStorage.setItem('alt-range', JSON.stringify(range)); } catch (e) {}
+    upd();
+  };
+  minIn.value = range.min; maxIn.value = range.max;
+  minIn.addEventListener('input', applyRange); maxIn.addEventListener('input', applyRange);
+  minIn.addEventListener('change', () => { minIn.value = range.min; }); maxIn.addEventListener('change', () => { maxIn.value = range.max; });
   el.addEventListener('input', upd); upd();
 })();
 </script>
